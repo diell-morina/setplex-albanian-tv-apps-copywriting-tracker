@@ -1,0 +1,479 @@
+import React, { useState, useEffect } from 'react';
+import { Copy, Download, Trash2, Plus, Type, Layout, MonitorPlay, Globe, Image as ImageIcon, X, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
+
+const ACCOUNTS = {
+  NimiTV: {
+    label: 'NimiTV',
+    icon: <MonitorPlay className="w-5 h-5" />,
+    color: 'bg-blue-600',
+    campaigns: ['EU+EEA', 'UK', 'DE']
+  },
+  TVALB: {
+    label: 'TVALB',
+    icon: <Globe className="w-5 h-5" />,
+    color: 'bg-red-600',
+    campaigns: ['US', 'Canada']
+  }
+};
+
+// Helper to create safe initial objects
+const createEmptyItem = () => ({ text: '', status: 'pending' }); // status: pending, approved, rejected
+
+const createEmptyCampaignData = () => ({
+  primaryTexts: Array.from({ length: 5 }, createEmptyItem),
+  headlines: Array.from({ length: 5 }, createEmptyItem),
+  selectedImage: null
+});
+
+export default function App() {
+  const [selectedAccount, setSelectedAccount] = useState('NimiTV');
+  const [selectedCampaign, setSelectedCampaign] = useState('EU+EEA');
+  
+  // Initialize state, handling potential migration from old string-only data if necessary (simulated for robustness)
+  const [data, setData] = useState(() => {
+    const initialState = {};
+    Object.keys(ACCOUNTS).forEach(acc => {
+      initialState[acc] = {};
+      ACCOUNTS[acc].campaigns.forEach(camp => {
+        initialState[acc][camp] = createEmptyCampaignData();
+      });
+    });
+    return initialState;
+  });
+
+  const [notification, setNotification] = useState(null);
+
+  useEffect(() => {
+    const campaigns = ACCOUNTS[selectedAccount].campaigns;
+    if (!campaigns.includes(selectedCampaign)) {
+      setSelectedCampaign(campaigns[0]);
+    }
+  }, [selectedAccount]);
+
+  const handleTextChange = (type, index, value) => {
+    setData(prev => ({
+      ...prev,
+      [selectedAccount]: {
+        ...prev[selectedAccount],
+        [selectedCampaign]: {
+          ...prev[selectedAccount][selectedCampaign],
+          [type]: prev[selectedAccount][selectedCampaign][type].map((item, i) => 
+            i === index ? { ...item, text: value } : item
+          )
+        }
+      }
+    }));
+  };
+
+  const handleStatusChange = (type, index, status) => {
+    setData(prev => ({
+      ...prev,
+      [selectedAccount]: {
+        ...prev[selectedAccount],
+        [selectedCampaign]: {
+          ...prev[selectedAccount][selectedCampaign],
+          [type]: prev[selectedAccount][selectedCampaign][type].map((item, i) => 
+            i === index ? { ...item, status: status } : item
+          )
+        }
+      }
+    }));
+  };
+
+  const handleImageUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      if (!file.type.match('image.*')) {
+        showNotification('Please upload an image file (PNG/JPEG)');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setData(prev => ({
+          ...prev,
+          [selectedAccount]: {
+            ...prev[selectedAccount],
+            [selectedCampaign]: {
+              ...prev[selectedAccount][selectedCampaign],
+              selectedImage: {
+                name: file.name,
+                data: event.target.result
+              }
+            }
+          }
+        }));
+        showNotification('Image uploaded successfully');
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const removeImage = () => {
+    setData(prev => ({
+      ...prev,
+      [selectedAccount]: {
+        ...prev[selectedAccount],
+        [selectedCampaign]: {
+          ...prev[selectedAccount][selectedCampaign],
+          selectedImage: null
+        }
+      }
+    }));
+  };
+
+  const clearCurrentCampaign = () => {
+    if (confirm('Are you sure you want to clear all text and media for this campaign?')) {
+      setData(prev => ({
+        ...prev,
+        [selectedAccount]: {
+          ...prev[selectedAccount],
+          [selectedCampaign]: createEmptyCampaignData()
+        }
+      }));
+      showNotification('Campaign data cleared');
+    }
+  };
+
+  const copyToClipboard = (text) => {
+    if (!text) return;
+    const textArea = document.createElement("textarea");
+    textArea.value = text;
+    document.body.appendChild(textArea);
+    textArea.select();
+    try {
+      document.execCommand('copy');
+      showNotification('Copied to clipboard!');
+    } catch (err) {
+      showNotification('Failed to copy');
+    }
+    document.body.removeChild(textArea);
+  };
+
+  const showNotification = (msg) => {
+    setNotification(msg);
+    setTimeout(() => setNotification(null), 3000);
+  };
+
+  const exportToCSV = () => {
+    let csvContent = "data:text/csv;charset=utf-8,Account,Campaign,Type,Index,Content,Status,Length,Info\n";
+
+    Object.keys(data).forEach(acc => {
+      Object.keys(data[acc]).forEach(camp => {
+        const campData = data[acc][camp];
+        
+        campData.primaryTexts.forEach((item, idx) => {
+          if (item.text) {
+             csvContent += `${acc},${camp},Primary Text,${idx + 1},"${item.text.replace(/"/g, '""')}",${item.status.toUpperCase()},${item.text.length} chars,\n`;
+          }
+        });
+        
+        campData.headlines.forEach((item, idx) => {
+          if (item.text) {
+             csvContent += `${acc},${camp},Headline,${idx + 1},"${item.text.replace(/"/g, '""')}",${item.status.toUpperCase()},${item.text.length} chars,\n`;
+          }
+        });
+
+        if (campData.selectedImage) {
+           csvContent += `${acc},${camp},Image,1,"${campData.selectedImage.name}",APPROVED,Image File\n`;
+        }
+      });
+    });
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "ad_copy_tracker_with_status.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const currentData = data[selectedAccount][selectedCampaign] || createEmptyCampaignData();
+  const themeColor = ACCOUNTS[selectedAccount].color;
+  const themeText = selectedAccount === 'NimiTV' ? 'text-blue-600' : 'text-red-600';
+  const themeBorder = selectedAccount === 'NimiTV' ? 'border-blue-200' : 'border-red-200';
+
+  const StatusControls = ({ status, onChange }) => (
+    <div className="flex items-center gap-1">
+      <button
+        onClick={() => onChange('pending')}
+        className={`p-1 rounded-md transition-colors ${status === 'pending' ? 'bg-gray-200 text-gray-600' : 'text-gray-300 hover:text-gray-500'}`}
+        title="Mark as Pending"
+      >
+        <AlertCircle className="w-4 h-4" />
+      </button>
+      <button
+        onClick={() => onChange('rejected')}
+        className={`p-1 rounded-md transition-colors ${status === 'rejected' ? 'bg-red-100 text-red-600' : 'text-gray-300 hover:text-red-400'}`}
+        title="Reject"
+      >
+        <XCircle className="w-4 h-4" />
+      </button>
+      <button
+        onClick={() => onChange('approved')}
+        className={`p-1 rounded-md transition-colors ${status === 'approved' ? 'bg-green-100 text-green-600' : 'text-gray-300 hover:text-green-400'}`}
+        title="Approve"
+      >
+        <CheckCircle className="w-4 h-4" />
+      </button>
+    </div>
+  );
+
+  const getStatusStyles = (status) => {
+    switch(status) {
+      case 'approved': return 'ring-2 ring-green-500 bg-green-50/30';
+      case 'rejected': return 'ring-2 ring-red-200 bg-red-50/30 opacity-70 grayscale';
+      default: return 'bg-gray-50 focus:bg-white';
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50 flex flex-col font-sans text-slate-800">
+      
+      {/* Header */}
+      <header className="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-10">
+        <div className="max-w-6xl mx-auto px-4 py-4 flex flex-col md:flex-row justify-between items-center gap-4">
+          <div className="flex items-center gap-3">
+            <div className={`p-2 rounded-lg text-white ${themeColor}`}>
+              <Layout className="w-6 h-6" />
+            </div>
+            <h1 className="text-xl font-bold tracking-tight">Ad Copy Manager</h1>
+          </div>
+          
+          <div className="flex items-center gap-3">
+             <button 
+              onClick={exportToCSV}
+              className="flex items-center gap-2 px-4 py-2 bg-slate-800 text-white rounded-md hover:bg-slate-700 transition-colors text-sm font-medium shadow-sm"
+            >
+              <Download className="w-4 h-4" />
+              Export CSV
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main className="flex-1 max-w-6xl mx-auto w-full p-4 md:p-6 space-y-6">
+        
+        {/* Account Selector */}
+        <div className="grid grid-cols-2 gap-4">
+          {Object.keys(ACCOUNTS).map(acc => (
+            <button
+              key={acc}
+              onClick={() => setSelectedAccount(acc)}
+              className={`flex items-center justify-center gap-3 p-4 rounded-xl border-2 transition-all duration-200 ${
+                selectedAccount === acc 
+                  ? `${themeBorder} bg-white ring-1 ring-offset-2 ${selectedAccount === 'NimiTV' ? 'ring-blue-500' : 'ring-red-500'}` 
+                  : 'border-transparent bg-white hover:bg-gray-50 text-gray-400'
+              } shadow-sm`}
+            >
+              <div className={selectedAccount === acc ? themeText : 'text-gray-400'}>
+                {ACCOUNTS[acc].icon}
+              </div>
+              <span className={`text-lg font-bold ${selectedAccount === acc ? 'text-slate-900' : 'text-gray-400'}`}>
+                {ACCOUNTS[acc].label}
+              </span>
+            </button>
+          ))}
+        </div>
+
+        {/* Campaign Selector */}
+        <div className="bg-white p-2 rounded-lg shadow-sm border border-gray-200 flex flex-wrap gap-2">
+          {ACCOUNTS[selectedAccount].campaigns.map(camp => (
+            <button
+              key={camp}
+              onClick={() => setSelectedCampaign(camp)}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                selectedCampaign === camp
+                  ? `${themeColor} text-white shadow-sm`
+                  : 'text-gray-600 hover:bg-gray-100'
+              }`}
+            >
+              {camp} Campaign
+            </button>
+          ))}
+        </div>
+
+        {/* Main Editor Area */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+            <div>
+              <h2 className="text-lg font-semibold flex items-center gap-2">
+                <span className={themeText}>{selectedAccount}</span> 
+                <span className="text-gray-300">/</span>
+                <span>{selectedCampaign}</span>
+              </h2>
+              <p className="text-xs text-gray-500 mt-1">Drafting {selectedCampaign} ad variations</p>
+            </div>
+            <button 
+              onClick={clearCurrentCampaign}
+              className="text-gray-400 hover:text-red-500 p-2 rounded-full hover:bg-red-50 transition-colors"
+              title="Clear all fields"
+            >
+              <Trash2 className="w-5 h-5" />
+            </button>
+          </div>
+
+          <div className="grid md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-gray-100">
+            
+            {/* Left Column: Primary Text */}
+            <div className="p-6 space-y-6">
+              <div className="flex items-center gap-2 mb-4">
+                <div className="p-1.5 bg-indigo-100 text-indigo-600 rounded">
+                  <Type className="w-4 h-4" />
+                </div>
+                <h3 className="font-semibold text-gray-700">Primary Text</h3>
+                <span className="ml-auto text-xs font-medium text-gray-400 uppercase tracking-wider">Up to 5 Options</span>
+              </div>
+              
+              <div className="space-y-6">
+                {currentData.primaryTexts.map((item, idx) => (
+                  <div key={`pt-${idx}`} className="group relative">
+                    <div className="flex justify-between items-center mb-1.5">
+                       <label className="text-xs font-medium text-gray-400">
+                        Option {idx + 1}
+                        {item.status === 'approved' && <span className="ml-2 text-green-600 font-bold">APPROVED</span>}
+                        {item.status === 'rejected' && <span className="ml-2 text-red-500 font-bold">REJECTED</span>}
+                      </label>
+                      <StatusControls 
+                        status={item.status} 
+                        onChange={(newStatus) => handleStatusChange('primaryTexts', idx, newStatus)} 
+                      />
+                    </div>
+                   
+                    <div className="relative">
+                      <textarea
+                        value={item.text}
+                        onChange={(e) => handleTextChange('primaryTexts', idx, e.target.value)}
+                        placeholder="Enter primary ad text..."
+                        className={`w-full p-3 pr-10 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent min-h-[100px] resize-none transition-shadow ${getStatusStyles(item.status)}`}
+                      />
+                       <div className={`absolute bottom-2 right-2 text-xs font-medium ${item.text.length > 125 ? 'text-orange-500' : 'text-gray-300'}`}>
+                        {item.text.length}
+                      </div>
+                      <button
+                        onClick={() => copyToClipboard(item.text)}
+                        className="absolute top-2 right-2 p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md opacity-0 group-hover:opacity-100 transition-all"
+                        title="Copy to clipboard"
+                      >
+                        <Copy className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Right Column: Headlines & Media */}
+            <div className="flex flex-col divide-y divide-gray-100">
+              
+              {/* Headlines Section */}
+              <div className="p-6 space-y-6 bg-gray-50/30">
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="p-1.5 bg-emerald-100 text-emerald-600 rounded">
+                    <Layout className="w-4 h-4" />
+                  </div>
+                  <h3 className="font-semibold text-gray-700">Headlines</h3>
+                  <span className="ml-auto text-xs font-medium text-gray-400 uppercase tracking-wider">Up to 5 Options</span>
+                </div>
+
+                <div className="space-y-4">
+                  {currentData.headlines.map((item, idx) => (
+                    <div key={`hl-${idx}`} className="group relative">
+                      <div className="flex justify-between items-center mb-1.5">
+                         <label className="text-xs font-medium text-gray-400">
+                          Headline {idx + 1}
+                        </label>
+                        <StatusControls 
+                          status={item.status} 
+                          onChange={(newStatus) => handleStatusChange('headlines', idx, newStatus)} 
+                        />
+                      </div>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          value={item.text}
+                          onChange={(e) => handleTextChange('headlines', idx, e.target.value)}
+                          placeholder="Enter catchy headline..."
+                          className={`w-full p-3 pr-16 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-shadow ${getStatusStyles(item.status)}`}
+                        />
+                         <div className={`absolute top-1/2 -translate-y-1/2 right-10 text-xs font-medium ${item.text.length > 40 ? 'text-orange-500' : 'text-gray-300'}`}>
+                          {item.text.length}
+                        </div>
+                        <button
+                          onClick={() => copyToClipboard(item.text)}
+                          className="absolute top-1/2 -translate-y-1/2 right-2 p-1.5 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-md opacity-0 group-hover:opacity-100 transition-all"
+                          title="Copy to clipboard"
+                        >
+                          <Copy className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Media Section */}
+              <div className="p-6 space-y-6">
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="p-1.5 bg-rose-100 text-rose-600 rounded">
+                    <ImageIcon className="w-4 h-4" />
+                  </div>
+                  <h3 className="font-semibold text-gray-700">Ad Creative</h3>
+                </div>
+
+                {!currentData.selectedImage ? (
+                  <div className="border-2 border-dashed border-gray-200 rounded-xl p-6 text-center hover:border-indigo-400 hover:bg-indigo-50 transition-colors">
+                    <input 
+                      type="file" 
+                      id="file-upload" 
+                      className="hidden" 
+                      accept="image/png, image/jpeg"
+                      onChange={handleImageUpload}
+                    />
+                    <label htmlFor="file-upload" className="cursor-pointer flex flex-col items-center gap-2">
+                      <div className="p-3 bg-white rounded-full shadow-sm text-gray-400">
+                        <ImageIcon className="w-6 h-6" />
+                      </div>
+                      <span className="text-sm font-medium text-indigo-600">Upload Image</span>
+                      <span className="text-xs text-gray-400">PNG or JPG</span>
+                    </label>
+                  </div>
+                ) : (
+                  <div className="relative group rounded-xl overflow-hidden border border-gray-200 bg-gray-50">
+                    <img 
+                      src={currentData.selectedImage.data} 
+                      alt="Ad Creative" 
+                      className="w-full h-48 object-cover"
+                    />
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                      <button 
+                        onClick={removeImage}
+                        className="p-2 bg-white text-red-600 rounded-full hover:bg-red-50 transition-colors shadow-lg"
+                        title="Remove image"
+                      >
+                        <Trash2 className="w-5 h-5" />
+                      </button>
+                    </div>
+                    <div className="absolute bottom-0 inset-x-0 bg-white/90 backdrop-blur px-3 py-2 text-xs font-medium text-gray-600 border-t border-gray-200 truncate">
+                      {currentData.selectedImage.name}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+            </div>
+
+          </div>
+        </div>
+      </main>
+
+      {/* Toast Notification */}
+      {notification && (
+        <div className="fixed bottom-6 right-6 bg-slate-800 text-white px-4 py-3 rounded-lg shadow-lg text-sm font-medium animate-fade-in-up flex items-center gap-2">
+          <div className="w-2 h-2 rounded-full bg-green-400"></div>
+          {notification}
+        </div>
+      )}
+    </div>
+  );
+}
